@@ -1,4 +1,5 @@
 import colors
+import sys
 
 def unhex(s):
 	if s is None:
@@ -17,4 +18,34 @@ def rgb(s, r=None, g=None, b=None):
 	assert(all(type(x)==int for x in (r,g,b)))
 	return f'\x1b[38;2;{r};{g};{b}m{s}\x1b[0m'
 
-print(rgb('hi', colors.skyblue))
+def spcspl(s):
+	buf = []
+	files = []
+	for c in s:
+		if len(buf)==0:
+			buf.append(c)
+			continue
+		if c in (' ','\t','\n'):
+			if buf[0] in (' ','\t','\n'):
+				buf.append(c)
+				continue
+			else:
+				files.append(''.join(buf))
+				buf = [c]
+		else:
+			if buf[0] not in (' ','\t','\n'):
+				buf.append(c)
+				continue
+			else:
+				files.append(''.join(buf))
+				buf = [c]
+
+	return files
+
+s = sys.stdin.read()
+for e in spcspl(s):
+	if e.endswith('.py'):
+		e = rgb(e, *colors.purple)
+	print(e, end='')
+print('')
+quit()
