@@ -1,5 +1,7 @@
-import colors
+import colors as c
 import sys
+
+from colors import colors
 
 def unhex(s):
 	if s is None:
@@ -42,10 +44,15 @@ def spcspl(s):
 
 	return files
 
-s = sys.stdin.read()
-for e in spcspl(s):
-	if e.endswith('.py'):
-		e = rgb(e, *colors.purple)
-	print(e, end='')
-print('')
-quit()
+
+def main():
+	s = sys.stdin.read()
+	for e in spcspl(s):
+		if e.endswith('.py'):
+			e = rgb(e, *c.brightblue)
+		print(e, end='')
+	print('')
+
+
+if __name__ == '__main__':
+	main()
