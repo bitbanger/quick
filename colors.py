@@ -1,98 +1,3 @@
-import inspect
-import re
-
-
-
-
-import ctypes
-
-
-# So fuck it we're just going to edit the C structures
-# for all dictionaries live in memory to make this change
-
-# Let's do some magic
-
-# TPFLAGS are 21 bytes past the address of dict's id
-# I counted them myself:
-# https://github.com/python/cpython/blob/
-	# e7e3d1d4a8dece01b1bbd0253684d5b46b2409d7/Include/cpython/object.h#L181
-
-# We can get the mem address for the dict structure in C
-# using id()
-tp_flags = ctypes.c_ulong.from_address(id(dict) + 168)
-assert(tp_flags.value == dict.__flags__) # if this doesn't work we should NOT go farther
-
-# let's go farther :)
-tp_flags.value &= -257	# wipe the immutable flag
-												# (the cpython source code confirms it's bitmask 1<<8, aka 256)
-
-
-# Do you know why you can't stop me from doing this anymore?
-# It's because I'm just built different than you, Guido.
-old=dict.items;dict.__iter__=lambda *a,**kw:(print('I win'),old(*a,**kw).__iter__())[1]
-
-tp_flags.value |= 256
-
-for x in {'abc': 123}:
-	print(x)
-
-
-
-
-
-
-
-
-
-
-
-quit()
-def getline(fn, n):
-	with open(fn, 'r') as f:
-		for i, l in enumerate(f.readlines()):
-			if i==n-1:
-				return l
-
-__builtins__.dict.__iter__ = lambda *a,**kw: print('hi')
-try:
-	old_dict = __builtins__['dict']
-except:
-	old_dict = __builtins__.dict
-class ldict(dict):
-	def __iter__(self):
-		return self.items().__iter__()
-
-'''
-	def __next__(self):
-		ff = inspect.currentframe().f_back
-		print(ff.f_code.co_filename)
-		if 'python3' in ff.f_code.co_filename:
-			return old_dict.__next__(self)
-		caller_line = getline(ff.f_code.co_filename, ff.f_lineno)
-		print(ff.f_code.co_filename)
-		
-		try:
-			__builtins__['dict'] = old_dict
-		except:
-			__builtins__.dict = old_dict
-		ms = re.findall('for (.*) in .*', caller_line)
-		if len(ms)==1:
-			unpack = [x.strip() for x in ms[0].split(',')]
-			if len(unpack)==2:
-				return 
-		print(ms)
-		quit()
-		try:
-			__builtins__['dict'] = self.__class__
-		except:
-			__builtins__.dict = self.__class__
-		return None
-'''
-try:
-	__builtins__.dict = ldict
-except AttributeError:
-	__builtins__['dict'] = ldict
-
 aliceblue = (240, 248, 255)
 aqua = (0, 255, 255)
 black = (0, 0, 0)
@@ -291,7 +196,7 @@ colors = dict({
 
 def main():
 	from txt import rgb
-	for name, c in colors:
+	for name, c in colors.items():
 		print(rgb(name, *c))
 
 
