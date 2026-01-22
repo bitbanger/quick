@@ -1,6 +1,8 @@
+import argparse
 import colors as c
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -21,14 +23,18 @@ def extrgb(s, *a, **kw):
 	return rgb(rest, *a, **kw) + rgb('.' + ext, c.lightgray)
 
 class fi:
-	__slots__='path','name','dot','dir'
-	def __init__(self, path):
+	__slots__='path','name','dot','dir','force_color'
+	def __init__(self, path, force_color=None):
 		self.path = path
 		self.name = os.path.basename(path)
 		self.dir = os.path.isdir(self.path)
 		self.dot = self.name.startswith('.') or self.name.endswith('~') or self.name=='__pycache__'
+		self.force_color = force_color
 
 	def __str__(self):
+		if (self.force_color is not None) and ((fcol:=c.colors.get(self.force_color)) is not None):
+			return rgb(self.name, fcol)
+
 		if self.dir:
 			if self.dot:
 				return rgb(self.name, c.darkgreen)
@@ -52,7 +58,6 @@ class fi:
 	def __lt__(self, other):
 		return self.name<=other.name
 
-
 @contextmanager
 def clock():
 	t0 = time.time()
@@ -60,18 +65,47 @@ def clock():
 	print(rgb(f'\t{time.time()-t0:.05f} secs', c.gray))
 
 
-def lls(path='.', ld=False, sort=True):
-	if path.startswith('~'):
-		path = path.replace('~', home())
+def rules(path):
+	if not os.path.exists(fn:=os.path.join(path, '.lls')):
+		return lambda fn: None
 
-	path = pathlib.Path(path).absolute()
+	# Parse the rules from the file
+	rs = []
+
+	def _parse(l):
+		spl = l.split(' ')
+		col = spl[0]
+		regex = re.compile(' '.join(spl[1:]))
+		return regex, col
+
+	with open(fn, 'r') as f:
+		for l in f.readlines():
+			if not (l:=l.strip()):
+				continue
+			rs.append(_parse(l))
+
+	# Build the fn->col function
+	# TODO: smarter than taking the first match?
+	def _lookup(fn):
+		fn = os.path.basename(fn)
+		for regex, col in rs:
+			if regex.match(fn):
+				return col
+		return None
+
+	return _lookup
+
+
+def list_fs(path='.', ld=False, sort=True):
+	path = norm_path(path)
+	force_col_fn = rules(path)
 
 	if ld:
 		fs = [os.path.join(path, x) for x in os.listdir(path)]
 	else:
 		fs = [os.path.join(path, x.name) for x in os.scandir(path)]
 
-	fs = [fi(f) for f in fs]
+	fs = [fi(f, force_color=force_col_fn(f)) for f in fs]
 
 	if sort:
 		dirs, dots, dotdirs, files = [],[],[],[]
@@ -93,7 +127,7 @@ wwid = int(os.get_terminal_size().columns * 0.8)
 
 
 class colinfo:
-	__slots__='valid', 'llen', 'mlen'
+	__slots__ = 'valid', 'llen', 'mlen'
 	def __init__(self, n):
 		self.valid = True
 		self.llen = 0
@@ -131,8 +165,7 @@ def colcount(cfgs, fs):
 
 	return curs+1
 
-def tab(fs):
-
+def fmt(fs):
 	tcwid = os.get_terminal_size().columns
 	global wwid
 	mfsln = len(max(fs, key=len))
@@ -169,18 +202,47 @@ def tab(fs):
 	return st
 
 
-def tls(*a, **kw):
-	return tab(lls(*a, **kw))
+def norm_path(path):
+	if str(path).startswith('~'):
+		path = str(path).replace('~', home())
+	return pathlib.Path(path).absolute()
+
+
+def lls(path='.', find=None, ld=False, sort=True):
+	path = norm_path(path)
+
+	if os.path.isfile(path):
+		fs = list_fs(path=os.path.dirname(path), ld=ld, sort=sort)
+		fs = [f for f in fs if f.name==os.path.basename(path)]
+	else:
+		fs = list_fs(path=path, ld=ld, sort=sort)
+
+	fmted = fmt(fs)
+
+	if find is not None:
+		fmted = fmted.replace(find, rgb(find, c.red))
+
+	return fmted
+
+
+def lsf(pat, path='.', ld=False, sort=True):
+	fstr = lls(path=path, ld=ld, sort=sort)
+	fstr = fstr.replace(pat, rgb(pat, c.red))
+	return fstr
 
 
 def main():
-	res = tab(lls(sys.argv[1] if len(sys.argv)>1 else '.'))
-	print(res)
-	quit()
-	with clock():
-		r = lls('.', ld=True)
-	with clock():
-		r2 = lls('.', ld=False)
+	ap = argparse.ArgumentParser()
+	ap.add_argument('path', type=str, nargs='?', default='.') # TODO: path type (no internet rn)
+	ap.add_argument('--find', '-f', type=str, default=None)
+	args = ap.parse_args()
+
+	path = args.path
+	
+
+	print(lls(args.path, find=args.find))
+	# for c in lls(args.path, find=args.find).encode():
+		# print(hex(c))
 
 
 if __name__ == '__main__':
