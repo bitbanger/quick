@@ -1,7 +1,7 @@
-import colors as c
+import quick.colors as c
 import sys
 
-from colors import colors
+from quick.colors import colors
 
 def unhex(s):
 	if s is None:
