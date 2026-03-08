@@ -387,6 +387,7 @@ def lls(path='.', find=None, ld=False, sort=True, time=False, lst=False):
 	# drwxr-xr-x   4 lane staff     128 Jan 13 15:38 workbooks
 	if lst:
 		# TODO: add symlink annotations
+		# TODO: fix wrapping for -l on short terminals
 
 		pad_str = '@LPD'
 		flst = []
