@@ -39,7 +39,7 @@ def hsv_sort_key(cname):
 
 def main():
 	from quick.txt import rgb
-	for name, c in colors.items():
+	for name, c in sorted(colors.items(), key=lambda e: hsv_sort_key(e[0])):
 		print(rgb(name, *c))
 
 

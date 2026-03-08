@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+
+import re
+
+from colorsys import rgb_to_hsv
+
+from quick.colors import colors
+from quick.lls import fmt
+from quick.txt import rgb
+from quick.util import splitf
+
+
+def main():
+	cs = []
+	for c in colors.keys():
+		dupe = False
+		for c2 in colors.keys():
+			if c==c2:
+				continue
+			if c == c2.replace('_', '') and len(c2)>len(c):
+				dupe = True
+				break
+		if dupe:
+			continue
+		cs.append(c)
+
+	cs = sorted(cs, key=lambda c: rgb_to_hsv(*colors[c]))
+
+	s = fmt(cs)
+
+	chunks = splitf('[a-z_0-9]*')(s)
+	for i, c in enumerate(chunks):
+		if c in colors:
+			chunks[i] = rgb(c, *colors[c])
+
+	s = ''.join(chunks)
+
+	print(s)
+	quit()
+
+
+if __name__ == '__main__':
+	main()

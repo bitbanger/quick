@@ -1,13 +1,17 @@
 import argparse
-import quick.colors as c
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
-import time
+import time as _time
 
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+
+import quick.colors as c
+import quick.util as util
 
 from quick.txt import rgb
 
@@ -55,12 +59,13 @@ underline = ul = lansi(4)
 strikethrough = strikethru = strike = st = lansi(9)
 
 class fi:
-	__slots__='path','name','dot','dir','force_color'
+	__slots__='path','name','dot','dir','force_color','abspath'
 	def __init__(self, path, force_color=None):
 		self.path = path
 		self.name = os.path.basename(path)
 		self.dir = os.path.isdir(self.path)
 		self.dot = self.name.startswith('.') or self.name.endswith('~') or self.name=='__pycache__'
+		self.abspath = os.path.abspath(self.path)
 		self.force_color = force_color
 
 
@@ -137,9 +142,9 @@ class fi:
 
 @contextmanager
 def clock():
-	t0 = time.time()
+	t0 = _time.time()
 	yield
-	print(rgb(f'\t{time.time()-t0:.05f} secs', c.gray))
+	print(rgb(f'\t{_time.time()-t0:.05f} secs', c.gray))
 
 
 def rules(path):
@@ -181,7 +186,7 @@ def rules(path):
 	return _lookup
 
 
-def list_fs(path='.', ld=False, sort=True):
+def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
 	path = norm_path(path)
 	force_col_fn = rules(path)
 
@@ -204,11 +209,11 @@ def list_fs(path='.', ld=False, sort=True):
 			else:
 				files.append(f)
 
-		# Within each class of file, sort by color
+	# Within each class of file, sort by color
 	_gray = lambda f: isinstance(f.force_color, str) and 'gray' in f.force_color.lower()
 	_sort_grays = lambda l: [e for e in l if not _gray(e)] + [e for e in l if _gray(e)]
 
-	skey = lambda fil: (fil.ansi(), c.col_sort_key(fil.force_color))
+	# skey = lambda fil: (fil.ansi(), c.col_sort_key(fil.force_color))
 	def skey(fil):
 		name = fil.force_color or ''
 		ansi = fil.ansi()
@@ -224,20 +229,30 @@ def list_fs(path='.', ld=False, sort=True):
 		# Then the color, by HSV
 		hsv = c.hsv_sort_key(name)
 
-		return ansi_spl + hsv
+		return (ansi_spl, hsv)
 
 	_sort_col = lambda l: sorted(l, key=skey)
+
+	_sort_mtime = lambda l: sorted(l, key=lambda x: -os.path.getmtime(x.abspath))
+
+	_sort = lambda l: _sort_grays(_sort_col(sorted(l)))
+	if time:
+		_sort = lambda l: _sort_mtime(_sort_grays(_sort_col(sorted(l))))
 	# _sort_col = lambda l: sorted(l, key=lambda e: c.ansi2name[e.ansi()])
 	# _sort_col = lambda l: (print(l), quit())[0]
 
-	dirs = _sort_grays(_sort_col(sorted(dirs)))
-	dotdirs = _sort_grays(_sort_col(sorted(dotdirs)))
-	files = _sort_grays(_sort_col(sorted(files)))
-	dots = _sort_grays(_sort_col(sorted(dots)))
+	if sort:
+		dirs = _sort(dirs)
+		dotdirs = _sort(dotdirs)
+		files = _sort(files)
+		dots = _sort(dots)
 
-	fs = dirs + dotdirs + files + dots
+		fs = dirs + dotdirs + files + dots
+		fs = [f for f in fs if not _gray(f)] + [f for f in fs if _gray(f)]
+	else:
+		fs = _sort(fs)
 
-	fs = [f for f in fs if not _gray(f)] + [f for f in fs if _gray(f)]
+
 
 	return fs
 
@@ -289,7 +304,7 @@ def colcount(cfgs, fs):
 
 	return curs+1
 
-def fmt(fs):
+def fmt(fs, force_nc=None):
 	tcwid = os.get_terminal_size().columns
 	global wwid
 	mfsln = len(max(fs, key=len))
@@ -314,6 +329,8 @@ def fmt(fs):
 	cfgs = [colinfo(i+1) for i in range(wwid)]
 
 	nc = colcount(cfgs, fs)
+	if force_nc is not None:
+		nc = force_nc
 	if nc == 0:
 		# No files to list
 		quit()
@@ -342,10 +359,13 @@ def norm_path(path):
 	return pathlib.Path(path).absolute()
 
 
-def lls(path='.', find=None, ld=False, sort=True):
+def lls(path='.', find=None, ld=False, sort=True, time=False, lst=False):
 	if isinstance(path, list):
 		# We already did all the dirs in main, I guess
 		fs = []
+		# TODO: color sort here, too?
+		if time:
+			path = sorted(path, key=lambda p: -os.path.getmtime(p))
 		for p in path:
 			p = str(norm_path(p))
 			pdir = os.path.dirname(p)
@@ -356,24 +376,71 @@ def lls(path='.', find=None, ld=False, sort=True):
 		path = norm_path(path)
 
 		if os.path.isfile(path):
-			fs = list_fs(path=os.path.dirname(path), ld=ld, sort=sort)
+			fs = list_fs(path=os.path.dirname(path), ld=ld, sort=sort, time=time, lst=lst)
 			fs = [f for f in fs if f.name==os.path.basename(path)]
 		else:
-			fs = list_fs(path=path, ld=ld, sort=sort)
+			fs = list_fs(path=path, ld=ld, sort=sort, time=time, lst=lst)
 
 	if len(fs) == 0:
 		quit()
 
-	fmted = fmt(fs)
+	# drwxr-xr-x   4 lane staff     128 Jan 13 15:38 workbooks
+	if lst:
+		pad_str = '@LPD'
+		flst = []
+		col_map = {}
+		# filename column
+		for f in fs:
+			f.name += pad_str
+			flst.append(f)# + pad_str)
+		# mtime column
+		for f in fs:
+			mtime = datetime.fromtimestamp(os.path.getmtime(f.abspath))
+			over_one_year = (datetime.now()-mtime) >= timedelta(days=365) # fuck leap years ig
 
-	if find is not None:
-		fmted = fmted.replace(find, rgb(find, c.red))
+			if over_one_year: # fuck leap years ig
+				mtstr = mtime.strftime('%b %e  %Y')
+			else:
+				mtstr = mtime.strftime('%b %e %H:%M')
+			mtstr += ' '*2
+
+			m, sp1, d, sp2, t, tpad = util.splitf('\\s*')(mtstr)
+			m = rgb(m, *c.dark_khaki)
+			d = rgb(d, *c.gold3)
+			if over_one_year:
+				t = rgb(t, *c.grey42)
+			else:
+				t = rgb(t, *c.grey70)
+			col_mtstr = ''.join([m, sp1, d, sp2, t, tpad])
+			col_map[mtstr] = col_mtstr
+			# mtstr = (spl:=mtstr.split(' '))[0] + ' ' + rgb(spl[1] + ' ' + spl[2], 220,220,220) + ' ' + rgb(spl[3], 100,100,100)
+			flst.append(mtstr)
+		# perm column
+		for f in fs:
+			perm = stat.filemode(os.stat(f.abspath).st_mode)
+			tmp = ''
+			for ch in perm:
+				if ch == '-':
+					tmp += rgb(ch, *c.grey70)
+				else:
+					tmp += rgb(ch, *c.steel_blue)
+			col_map[perm] = tmp
+			flst.append(perm)
+
+		fmted = fmt(flst, force_nc=3)
+		fmted = fmted.replace(pad_str, ' '*len(pad_str))
+		for s, col_s in col_map.items():
+			fmted = fmted.replace(s, col_s)
+	else:
+		fmted = fmt(fs)
+		if find is not None:
+			fmted = fmted.replace(find, rgb(find, c.red))
 
 	return fmted
 
 
-def lsf(pat, path='.', ld=False, sort=True):
-	fstr = lls(path=path, ld=ld, sort=sort)
+def lsf(pat, path='.', ld=False, sort=True, time=False, lst=False):
+	fstr = lls(path=path, ld=ld, sort=sort, time=time, lst=lst)
 	fstr = fstr.replace(pat, rgb(pat, c.red))
 	return fstr
 
@@ -385,7 +452,9 @@ if os.path.exists(llsb:=os.path.join(os.environ.get('HOME'), '.lls_base')):
 def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument('paths', type=str, nargs='*', default=['.']) # TODO: path type (no internet rn)
-	ap.add_argument('--find', '-f', type=str, default=None)
+	ap.add_argument('-f', '--find', type=str, default=None)
+	ap.add_argument('-t', '--time', action='store_true')
+	ap.add_argument('-l', '--list', action='store_true')
 	args = ap.parse_args()
 
 	paths = []
@@ -396,7 +465,7 @@ def main():
 			print(rgb("\ndoesn't exist: ", c.red) + p + '\n')
 
 	if len(paths) == 1:
-		print(lls(paths[0], find=args.find))
+		print(lls(paths[0], find=args.find, sort=(not args.time), time=args.time, lst=args.list))
 		quit()
 	else:
 		dirs = []
@@ -410,9 +479,9 @@ def main():
 		for d in dirs:
 			# print(f'[grey70]{d}[/grey70]:')
 			print(rgb(d, 100, 100, 100) + ':', end='')
-			print(indent(lls(args.paths, find=args.find), n=1))
+			print(indent(lls(args.paths, find=args.find, time=args.time, lst=args.list), n=1))
 
-	print(lls(fns, find=args.find))
+	print(lls(fns, find=args.find, time=args.time, lst=args.list))
 	# for c in lls(args.path, find=args.find).encode():
 		# print(hex(c))
 
