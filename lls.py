@@ -15,12 +15,6 @@ import quick.util as util
 
 from quick.txt import rgb
 
-try:
-	os.get_terminal_size()
-except:
-	subprocess.run('ls')
-	quit()
-
 env=lambda k:os.environ.get(k)
 home=lambda:env('HOME')or env('USERPROFILE')
 
@@ -129,7 +123,7 @@ class fi:
 			else:
 				ext = self.name.split('.')[-1].strip().lower()
 				if ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'):
-					return extrgb(self.name, c.skyblue1)
+					return extrgb(self.name, c.skyblue)
 				else:
 					return extrgb(self.name)
 
@@ -248,7 +242,7 @@ def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
 		dots = _sort(dots)
 
 		fs = dirs + dotdirs + files + dots
-		fs = [f for f in fs if not _gray(f)] + [f for f in fs if _gray(f)]
+		# fs = [f for f in fs if not _gray(f)] + [f for f in fs if _gray(f)]
 	else:
 		fs = _sort(fs)
 
@@ -257,7 +251,7 @@ def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
 	return fs
 
 
-wwid = int(os.get_terminal_size().columns * 0.8)
+wwid = None
 
 
 class colinfo:
@@ -453,11 +447,17 @@ if os.path.exists(llsb:=os.path.join(os.environ.get('HOME'), '.lls_base')):
 		BASE_LLS = f.read().strip()
 
 def main():
+	global wwid
+
+	wwid = int(os.get_terminal_size().columns * 0.8)
+
 	ap = argparse.ArgumentParser()
 	ap.add_argument('paths', type=str, nargs='*', default=['.']) # TODO: path type (no internet rn)
 	ap.add_argument('-f', '--find', type=str, default=None)
 	ap.add_argument('-t', '--time', action='store_true')
 	ap.add_argument('-l', '--list', action='store_true')
+	# ap.add_argument('-r', '--reverse', action='store_true')
+	# ap.add_argument('-a', '--all', action='store_true')
 	args = ap.parse_args()
 
 	paths = []
@@ -490,4 +490,10 @@ def main():
 
 
 if __name__ == '__main__':
-	main()
+	try:
+		main()
+	except Exception as e:
+		if 'ioctl' in str(e):
+			os.execv(f'/opt/homebrew/bin/gls', sys.argv)
+		else:
+			raise e
