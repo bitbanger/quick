@@ -180,7 +180,7 @@ def rules(path):
 	return _lookup
 
 
-def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
+def list_fs(args, path='.', ld=False, sort=True):
 	path = norm_path(path)
 	force_col_fn = rules(path)
 
@@ -190,6 +190,7 @@ def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
 		fs = [os.path.join(path, x.name) for x in os.scandir(path)]
 
 	fs = [fi(f, force_color=force_col_fn(f)) for f in fs]
+	fs = [f for f in fs if args.all or (not f.dot)]
 
 	if sort:
 		dirs, dots, dotdirs, files = [],[],[],[]
@@ -230,7 +231,7 @@ def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
 	_sort_mtime = lambda l: sorted(l, key=lambda x: -os.path.getmtime(x.abspath))
 
 	_sort = lambda l: _sort_grays(_sort_col(sorted(l)))
-	if time:
+	if args.time:
 		_sort = lambda l: _sort_mtime(_sort_grays(_sort_col(sorted(l))))
 	# _sort_col = lambda l: sorted(l, key=lambda e: c.ansi2name[e.ansi()])
 	# _sort_col = lambda l: (print(l), quit())[0]
@@ -246,7 +247,8 @@ def list_fs(path='.', ld=False, sort=True, time=False, lst=False):
 	else:
 		fs = _sort(fs)
 
-
+	if args.reverse:
+		fs = fs[::-1]
 
 	return fs
 
@@ -260,6 +262,7 @@ class colinfo:
 		self.valid = True
 		self.llen = 0
 		self.mlen = [0]*n
+
 
 def colcount(cfgs, fs):
 	def strify(x):
@@ -298,7 +301,7 @@ def colcount(cfgs, fs):
 
 	return curs+1
 
-def fmt(fs, force_nc=None):
+def fmt(args, fs, force_nc=None):
 	tcwid = os.get_terminal_size().columns
 	global wwid
 	mfsln = len(max(fs, key=len))
@@ -314,7 +317,7 @@ def fmt(fs, force_nc=None):
 	st += ('\n')
 
 	try:
-		fs = [f for f in fs if not f.dot]
+		fs = [f for f in fs if args.all or (not f.dot)]
 	except AttributeError:
 		# We were passed something other than files
 		pass
@@ -353,12 +356,15 @@ def norm_path(path):
 	return pathlib.Path(path).absolute()
 
 
-def lls(path='.', find=None, ld=False, sort=True, time=False, lst=False):
+def lls(args, path='.'):
+	sort = True
+	ld = False
+
 	if isinstance(path, list):
 		# We already did all the dirs in main, I guess
 		fs = []
 		# TODO: color sort here, too?
-		if time:
+		if args.time:
 			path = sorted(path, key=lambda p: -os.path.getmtime(p))
 		for p in path:
 			p = str(norm_path(p))
@@ -370,16 +376,17 @@ def lls(path='.', find=None, ld=False, sort=True, time=False, lst=False):
 		path = norm_path(path)
 
 		if os.path.isfile(path):
-			fs = list_fs(path=os.path.dirname(path), ld=ld, sort=sort, time=time, lst=lst)
+			fs = list_fs(args, path=os.path.dirname(path), ld=ld, sort=sort)
 			fs = [f for f in fs if f.name==os.path.basename(path)]
 		else:
-			fs = list_fs(path=path, ld=ld, sort=sort, time=time, lst=lst)
+			fs = list_fs(args, path=path, ld=ld, sort=sort)
+
 
 	if len(fs) == 0:
 		quit()
 
 	# drwxr-xr-x   4 lane staff     128 Jan 13 15:38 workbooks
-	if lst:
+	if args.list:
 		# TODO: add symlink annotations
 		# TODO: fix wrapping for -l on short terminals
 
@@ -424,14 +431,14 @@ def lls(path='.', find=None, ld=False, sort=True, time=False, lst=False):
 			col_map[perm] = tmp
 			flst.append(perm)
 
-		fmted = fmt(flst, force_nc=3)
+		fmted = fmt(args, flst, force_nc=3)
 		fmted = fmted.replace(pad_str, ' '*len(pad_str))
 		for s, col_s in col_map.items():
 			fmted = fmted.replace(s, col_s)
 	else:
-		fmted = fmt(fs)
-		if find is not None:
-			fmted = fmted.replace(find, rgb(find, c.red))
+		fmted = fmt(args, fs)
+		if args.find is not None:
+			fmted = fmted.replace(args.find, rgb(args.find, c.red))
 
 	return fmted
 
@@ -456,8 +463,8 @@ def main():
 	ap.add_argument('-f', '--find', type=str, default=None)
 	ap.add_argument('-t', '--time', action='store_true')
 	ap.add_argument('-l', '--list', action='store_true')
-	# ap.add_argument('-r', '--reverse', action='store_true')
-	# ap.add_argument('-a', '--all', action='store_true')
+	ap.add_argument('-r', '--reverse', action='store_true')
+	ap.add_argument('-a', '--all', action='store_true')
 	args = ap.parse_args()
 
 	paths = []
@@ -468,7 +475,8 @@ def main():
 			print(rgb("\ndoesn't exist: ", c.red) + p + '\n')
 
 	if len(paths) == 1:
-		print(lls(paths[0], find=args.find, sort=(not args.time), time=args.time, lst=args.list))
+		# print(lls(paths[0], find=args.find, sort=(not args.time), time=args.time, lst=args.list))
+		print(lls(args, paths[0]))
 		quit()
 	else:
 		dirs = []
@@ -484,7 +492,7 @@ def main():
 			print(rgb(d, 100, 100, 100) + ':', end='')
 			print(indent(lls(args.paths, find=args.find, time=args.time, lst=args.list), n=1))
 
-	print(lls(fns, find=args.find, time=args.time, lst=args.list))
+	print(lls(args, fns))
 	# for c in lls(args.path, find=args.find).encode():
 		# print(hex(c))
 
